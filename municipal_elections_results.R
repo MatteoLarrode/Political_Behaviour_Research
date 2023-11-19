@@ -39,8 +39,8 @@ num_candidates <-
 
 base_column_names <- c(
   "num", "nuance_code", "sex", "name", "firstname", "list",
-  "Sièges / Elu", "Sièges Secteur", "Sièges CC", "votes",
-  "perc_registered_voters", "perc_valid_votes"
+  "city_council_elected_seats", "sector_elected_seats", "comty_advisors_elected_seats_num", "votes_total",
+  "registered_voters_perc", "valid_votes_perc"
 )
 
 new_column_names <- paste0(
@@ -51,9 +51,38 @@ new_column_names <- paste0(
 results_round1 <- raw_round1 |>
   setnames(19:length(colnames(raw_round1)), new_column_names) |>
   select(
-    -Abstentions, -Votants, 
-    -`% Abs/Ins`, -Blancs, 
-    -`% Blancs/Ins`, -Nuls, 
+    -Abstentions, -Votants,
+    -`% Abs/Ins`, -Blancs,
+    -`% Blancs/Ins`, -Nuls,
+    -`% Nuls/Ins`, -Exprimés,
+    -`% Exp/Ins`, -`% Exp/Vot`
+  ) |>
+  rename(
+    dpt_code = `Code du département`,
+    dpt_name = `Libellé du département`,
+    city_code = `Code de la commune`,
+    city_name = `Libellé de la commune`,
+    registered_total = Inscrits,
+    voted_perc = `% Vot/Ins`,
+    blank_vote_perc = `% Blancs/Vot`,
+    invalid_vote_perc = `% Nuls/Vot`
+  )
+
+# Round 2
+num_candidates_max2 <-
+  (length(grep("^...\\d+$", names(raw_round2), value = TRUE)) / 12) + 1
+
+new_column_names2 <- paste0(
+  rep(paste0("Candidate", 1:num_candidates_max2), each = length(base_column_names)), "_",
+  rep(base_column_names, times = num_candidates_max2)
+)
+
+results_round2 <- raw_round2 |>
+  setnames(19:length(colnames(raw_round2)), new_column_names2) |>
+  select(
+    -Abstentions, -Votants,
+    -`% Abs/Ins`, -Blancs,
+    -`% Blancs/Ins`, -Nuls,
     -`% Nuls/Ins`, -Exprimés,
     -`% Exp/Ins`, -`% Exp/Vot`
   ) |>
