@@ -68,17 +68,51 @@ w2 <-
   )
 
 # Wave 3 - Variables of interest
-# ID: UID_fes2
-# Secularism threatened: fes2_EE22_Q08_7
-# State of democracy: fes2_EE22_Q06
-# Support anti-health pass movement: fes2_EE22_Q16
-# Replacement of population by immigrants: fes2_EE22_Q17
+# ID: UID_fes3
+# Group sentiment - France Insoumise: fes3_QA07_A
+# Group sentiment - Europe Écologie Les Verts: fes3_QA07_B
+# Group sentiment - Parti socialiste: fes3_QA07_C
+# Group sentiment -  La République en marche: fes3_QA07_D
+# Group sentiment - les Républicains: fes3_QA07_E
+# Group sentiment - Rassemblement national: fes3_QA07_F
+# Group sentiment - Reconquête: fes3_QA07_G
+# EU integration: fes3_QA08_B
 # Age (decade): cal_AGE
 # Diploma: cal_DIPL
 # Sex: cal_SEXE
-# Interest in politics: eayy_i1
-# Self positioning - left-right scale: eayy_i8
 
-aggreg_waves <-
-  w2 |> 
-  left_join(w1)
+w3 <- 
+  wave3 |> 
+  select(
+    id = UID_fes3,
+    group_sentiment_france_insoumise = fes3_QA07_A,
+    group_sentiment_europe_ecologie_les_verts = fes3_QA07_B,
+    group_sentiment_parti_socialiste = fes3_QA07_C,
+    group_sentiment_la_republique_en_marche = fes3_QA07_D,
+    group_sentiment_les_republicains = fes3_QA07_E,
+    group_sentiment_rassemblement_national = fes3_QA07_F,
+    group_sentiment_reconquete = fes3_QA07_G,
+    eu_integration = fes3_QA08_B,
+    age_decade3 = cal_AGE,
+    diploma3 = cal_DIPL,
+    sex3 = cal_SEXE
+  )
+
+# Wave 4 - Variables of interest
+# ID: UID_fes4
+# Interest in politics: fes4_Q01
+#
+
+
+# Age (decade): cal_AGE
+# Diploma: cal_DIPL
+# Sex: cal_SEXE
+
+
+
+
+
+aggreg_waves <- 
+  w1 |> 
+  full_join(w2) |> 
+  full_join(w3)
