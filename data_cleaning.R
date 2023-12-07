@@ -5,7 +5,7 @@ library(tidyverse)
 folder_path <- "data/"
 csv_files <- list.files(path = folder_path, pattern = "\\.csv$", full.names = TRUE)
 
-for (file in csv_files){
+for (file in csv_files) {
   file_name <- tools::file_path_sans_ext(basename(file))
   file_df <- read_csv(file)
   assign(file_name, file_df)
@@ -25,8 +25,8 @@ for (file in csv_files){
 # Diploma: cal_DIPL
 # Sex: cal_SEXE
 
-w1 <- 
-  wave1 |> 
+w1 <-
+  wave1 |>
   select(
     id = UID_fes1,
     state_of_democracy = fes1_EE22_Q06,
@@ -52,8 +52,8 @@ w1 <-
 # Interest in politics: eayy_i1
 # Self positioning - left-right scale: eayy_i8
 
-w2 <- 
-  wave2 |> 
+w2 <-
+  wave2 |>
   select(
     id = UID_fes2,
     secularism_threatened = fes2_EE22_Q08_7,
@@ -63,7 +63,7 @@ w2 <-
     age_decade2 = cal_AGE,
     diploma2 = cal_DIPL,
     sex2 = cal_SEXE,
-    interest_in_politics = eayy_i1,
+    interest_in_politics2 = eayy_i1,
     self_positioning_left_right = eayy_i8
   )
 
@@ -81,16 +81,16 @@ w2 <-
 # Diploma: cal_DIPL
 # Sex: cal_SEXE
 
-w3 <- 
-  wave3 |> 
+w3 <-
+  wave3 |>
   select(
     id = UID_fes3,
-    group_sentiment_france_insoumise = fes3_QA07_A,
-    group_sentiment_europe_ecologie_les_verts = fes3_QA07_B,
-    group_sentiment_parti_socialiste = fes3_QA07_C,
-    group_sentiment_la_republique_en_marche = fes3_QA07_D,
-    group_sentiment_les_republicains = fes3_QA07_E,
-    group_sentiment_rassemblement_national = fes3_QA07_F,
+    group_sentiment_FI = fes3_QA07_A,
+    group_sentiment_EELV = fes3_QA07_B,
+    group_sentiment_PS = fes3_QA07_C,
+    group_sentiment_LREM = fes3_QA07_D,
+    group_sentiment_LR = fes3_QA07_E,
+    group_sentiment_RN = fes3_QA07_F,
     group_sentiment_reconquete = fes3_QA07_G,
     eu_integration = fes3_QA08_B,
     age_decade3 = cal_AGE,
@@ -101,18 +101,58 @@ w3 <-
 # Wave 4 - Variables of interest
 # ID: UID_fes4
 # Interest in politics: fes4_Q01
-#
-
-
+# Trust - Parliament: fes4_Q07a
+# Trust - Government: fes4_Q07b
+# Trust - Scientists: fes4_Q07d
+# Trust - Political Parties: fes4_Q07e
+# Trust - Traditional media: fes4_Q07f
+# Trust - Social networks: fes4_Q07g
+# Vote - First round presidential election: fes4_Q10p1.b
+# Vote Intention - First round legislative elections:  fes4_Q10lh1.c
+# Party sympathy - France Insoumise: fes4_Q16b
+# Party sympathy - Europe Écologie Les Verts: fes4_Q16a
+# Party sympathy - Parti socialiste: fes4_Q16f
+# Party sympathy -  La République en marche: fes4_Q16c
+# Party sympathy - les Républicains: fes4_Q16d
+# Party sympathy - Rassemblement national: fes4_Q16g
+# Party sympathy - Reconquête: fes4_Q16h
+# Party sympathy - MoDem: fes4_Q16e
+# Party identification - Which party, if any: fes4_Q23c
+# Party identification - Strength: fes4_Q23d
 # Age (decade): cal_AGE
 # Diploma: cal_DIPL
 # Sex: cal_SEXE
+w4 <- wave4 %>%
+  select(
+    id = UID_fes4,
+    interest_in_politics4 = fes4_Q01,
+    trust_parliament = fes4_Q07a,
+    trust_government = fes4_Q07b,
+    trust_scientists = fes4_Q07d,
+    trust_political_parties = fes4_Q07e,
+    trust_traditional_media = fes4_Q07f,
+    trust_social_networks = fes4_Q07g,
+    vote_r1_pres_election = fes4_Q10p1.b,
+    vote_intention_legislative = fes4_Q10lh1.c,
+    party_sympathy_FI = fes4_Q16b,
+    party_sympathy_EELV = fes4_Q16a,
+    party_sympathy_PS = fes4_Q16f,
+    party_sympathy_LREM = fes4_Q16c,
+    party_sympathy_LR = fes4_Q16d,
+    party_sympathy_RN = fes4_Q16g,
+    party_sympathy_reconquete = fes4_Q16h,
+    party_sympathy_modem = fes4_Q16e,
+    party_identification_which = fes4_Q23c,
+    party_identification_strength = fes4_Q23d,
+    age_decade4 = cal_AGE,
+    diploma4 = cal_DIPL,
+    sex4 = cal_SEXE
+  )
 
 
 
-
-
-aggreg_waves <- 
-  w1 |> 
-  full_join(w2) |> 
-  full_join(w3)
+aggreg_waves <-
+  w1 |>
+  full_join(w2) |>
+  full_join(w3) |>
+  full_join(w4)
