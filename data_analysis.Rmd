@@ -1,0 +1,509 @@
+---
+title: "POLS0066 - Data Analysis"
+author: "GNWL7"
+date: "2024-01-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Affective Polarisation in the French multiparty system\`
+
+## Setup
+
+The data comes from Sciences Po's [Dataverse](https://data.sciencespo.fr/dataverse/donneesrecherche). Data from Waves 1-4 has been imported as csv's, and stored in the /data folder. It has been aggregated and cleaned in `data_cleaning.R`.
+
+```{r include=FALSE}
+library(tidyverse)
+library(viridis)
+library(lme4)
+library(sjPlot)
+load("data/recoded_data.RData")
+```
+
+## The Impact of Ideological Difference and Partisan Identity on Out-Party Dislike
+
+The fourth wave of the 2022 French Election Study, carried out after the Presidential election from April 28 to June 2, 2022, takes up the entirety of module 6 (2021-2026) of the CSES (Comparative study of electoral systems) international comparison project.
+
+```{r}
+# Subset participants who:
+#   participated in wave 4
+#   have revealed their position on the left-right scale
+#   have stated some partisanship
+# N = 1141
+df_W4 <- aggreg_waves_recoded |> 
+  filter(W4 & left_right_self & PID != "No PID")
+```
+
+To include ideological distance in models, both the objective and subjective ideological positions of parties can be computed. Objective ideological position is the respondents' average rating of the party's left-right position. Subjective ideological position is each respondent's rating of the party's left-right position.
+
+"Of course, using the subjective measure of ideological distance does not fully exclude the possibility that the relationship may partly work reversed as well, and that a more negative affect towards a group may also cause people to perceive these groups as more ideologically distant." (Erkel & Turkenburg, 2022: 396)
+For this reason, I used objective ideological distance as my main independent variable in the following models.
+
+```{r}
+df_ideological <- df_W4 |>
+  mutate(
+    subj_ideo_dist_LFI = abs(left_right_LFI - left_right_self),
+    subj_ideo_dist_EELV = abs(left_right_EELV - left_right_self),
+    subj_ideo_dist_PS = abs(left_right_PS - left_right_self),
+    subj_ideo_dist_MoDem = abs(left_right_MoDem - left_right_self),
+    subj_ideo_dist_LREM = abs(left_right_LREM - left_right_self),
+    subj_ideo_dist_LR = abs(left_right_LR - left_right_self),
+    subj_ideo_dist_RN = abs(left_right_RN - left_right_self),
+    subj_ideo_dist_Reconquete = abs(left_right_Reconquete - left_right_self)
+  )|> 
+  mutate(
+    obj_ideo_dist_LFI = abs(mean(left_right_LFI, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_EELV = abs(mean(left_right_EELV, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_PS = abs(mean(left_right_PS, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_MoDem = abs(mean(left_right_MoDem, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_LREM = abs(mean(left_right_LREM, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_LR = abs(mean(left_right_LR, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_RN = abs(mean(left_right_RN, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_Reconquete = abs(mean(left_right_Reconquete, na.rm = TRUE) - left_right_self)
+  ) |> 
+  mutate(
+    ideo_extreme = abs(left_right_self - 5)
+  ) |> 
+  select(-left_right_LFI, -left_right_EELV, -left_right_PS, -left_right_LREM,
+         -left_right_LR, -left_right_RN, -left_right_Reconquete, -left_right_MoDem)
+```
+
+Party sympathy for out-parties can be regressed on objective ideological distance and party identity strength. 8 parties (LFI, EELV, PS, MoDem, LREM, LR, RN and Reconquet) have been evaluated by respondents, both in terms of their left-right position, and level of affect. We use multilevel linear regression models because the data structure is nested within the respondent, with 7 dyads between the respondent and each out-party.
+
+```{r}
+# Long dataset with, for each respondent, their objective ideological distance
+# and party symapthy for all parties
+df_outparty_sympathy_long <- 
+  df_ideological |> 
+  select(
+    id, age_decade, diploma, sex,
+    party_sympathy_LFI, party_sympathy_EELV, party_sympathy_PS,
+    party_sympathy_LREM, party_sympathy_LR, party_sympathy_RN,
+    party_sympathy_Reconquete, party_sympathy_MoDem, interest_politics,
+    interest_politics_cat, PID, PID_strength, PID_strength_cat, ideo_extreme, 
+    obj_ideo_dist_LFI, obj_ideo_dist_EELV, obj_ideo_dist_PS,
+    obj_ideo_dist_MoDem, obj_ideo_dist_LREM, obj_ideo_dist_LR,
+    obj_ideo_dist_RN, obj_ideo_dist_Reconquete) |> 
+  pivot_longer(
+    cols = starts_with("party_sympathy_"),
+    names_to = "party",
+    values_to = "party_sympathy"
+  ) |> 
+  pivot_longer(
+    cols = starts_with("obj_ideo_dist_"),
+    names_to = "obj_ideo_dist",
+    values_to = "obj_ideo_distance"
+  ) |> 
+  mutate(party = gsub("party_sympathy_", "", party)) |> 
+  filter(party == gsub("obj_ideo_dist_", "", obj_ideo_dist)) |> 
+  filter(PID != party)
+```
+
+On with the multilevel linear regression models:
+
+```{r}
+# Model 1: Objective Ideological Distance, Political Interest, and Demographic controls
+# Multilevel linear regression model with random intercepts
+model1_party_sympathy <- lmer(
+  data = df_outparty_sympathy_long,
+  party_sympathy ~ 
+    obj_ideo_distance + interest_politics_cat + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model1_party_sympathy)
+
+# Model 2: Adding partisan identity strength
+model2_party_sympathy <- lmer(
+  data = df_outparty_sympathy_long,
+  party_sympathy ~ 
+    obj_ideo_distance + PID_strength_cat  + interest_politics_cat + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model2_party_sympathy)
+
+# Model 3: Interaction terms with interest in politics
+model3_party_sympathy <- lmer(
+  data = df_outparty_sympathy_long,
+  party_sympathy ~ 
+    obj_ideo_distance * interest_politics_cat + PID_strength_cat + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model3_party_sympathy)
+```
+
+I can check whether these determinants of sympathy towards out-parties are also at play regarding sympathy towards out-party supporters.
+
+```{r}
+# Long dataset with, for each respondent, their objective ideological distance
+# and party symapthy for all parties
+df_outpartisan_sympathy_long <- 
+  df_ideological |> 
+  select(
+    id, age_decade, diploma, sex,
+    group_sentiment_LFI, group_sentiment_EELV, group_sentiment_PS,
+    group_sentiment_LREM, group_sentiment_LR, group_sentiment_RN,
+    group_sentiment_Reconquete, interest_politics,
+    interest_politics_cat, PID, PID_strength, PID_strength_cat, ideo_extreme, 
+    obj_ideo_dist_LFI, obj_ideo_dist_EELV, obj_ideo_dist_PS,
+    obj_ideo_dist_MoDem, obj_ideo_dist_LREM, obj_ideo_dist_LR,
+    obj_ideo_dist_RN, obj_ideo_dist_Reconquete) |> 
+  pivot_longer(
+    cols = starts_with("group_sentiment_"),
+    names_to = "group",
+    values_to = "group_sentiment"
+  ) |> 
+  pivot_longer(
+    cols = starts_with("obj_ideo_dist_"),
+    names_to = "obj_ideo_dist",
+    values_to = "obj_ideo_distance"
+  ) |> 
+  mutate(group = gsub("group_sentiment_", "", group)) |> 
+  filter(group == gsub("obj_ideo_dist_", "", obj_ideo_dist)) |> 
+  filter(PID != group & !is.na(group_sentiment))
+```
+
+On with the multilevel linear regression models:
+
+```{r}
+# Model 1: Objective Ideological Distance, Political Interest, and Demographic controls
+# Multilevel linear regression model with random intercepts
+model1_partisan_sympathy <- lmer(
+  data = df_outpartisan_sympathy_long,
+  group_sentiment ~ 
+    obj_ideo_distance + interest_politics_cat + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model1_partisan_sympathy)
+
+# Model 2: Adding partisan identity strength
+model2_partisan_sympathy <- lmer(
+  data = df_outpartisan_sympathy_long,
+  group_sentiment ~ 
+    obj_ideo_distance + PID_strength_cat  + interest_politics_cat + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model2_partisan_sympathy)
+
+# Model 3: Interaction terms with interest in politics
+model3_partisan_sympathy <- lmer(
+  data = df_outpartisan_sympathy_long,
+  group_sentiment ~ 
+    obj_ideo_distance * interest_politics_cat + PID_strength_cat + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model3_partisan_sympathy)
+```
+
+Interestingly, it seems that the effect of a strong partisanship has been reduced to insignificance when it comes to out-partisan sympathy.
+
+Now that I have fleshed out the relative importance of ideological distance and partisanship on out-party and out-partisan sympathy, the question of which ideological cleavages deserves to be examined. Following the method of Ryan and Reiljan (2021), I divide voters into three blocs, and examine each dyad. More precisely, we code respondents' policy stances on three policy issues (socioeconomic left-right, the environment and immigration) so that higher levels signify higher difference with the out-bloc of the dyad. The relative importance of the different policy stances as independent variables will be a good indicator of which issues create animus amongst voters towards out-partisans.
+
+## Issue Dimensions and Affective Polarisation
+
+```{r}
+# Subset participants who:
+#   participated in wave 1 and 4
+#   have expressed opinions on policy issues
+#   have stated some partisanship
+# N = 1102
+df_W14 <- aggreg_waves_recoded |> 
+  filter(W1 & W4 & PID != "No PID") |> 
+  filter(!is.na(socioeco_left) & !is.na(immigration_pro) & !is.na(environment_pro))
+
+# Vectors containing the main parties of each bloc
+left_greens <- c("LFI", "EELV", "PS", "LO", "NPA", "PCF")
+centre_right <- c("LREM", "RN")
+far_right <- c("DLF", "RN", "Reconquete")
+```
+
+Because the data is not nested within participants this time, I use OLS regression models where the main independent variables are the extremity of each respondent on issue positions, and the dependent variable is sympathy towards voters of the out-bloc, weighted by party size. 
+
+### Adding Party Vote Share
+
+Out-group sympathy evaluations will be weighted using vote shares so that larger parties count more. We use data for the first round of the 2022 Presidential election, from the French Ministry of the Interior (Ministère de l'Intérieur). Although this proxy has limitations, it has been used in previous studies and constitutes an improvement from unweighted evaluations.
+
+In the calculations of out-bloc sympathy, each party's evaluation will be weighted by the ratio of votes gained by that party as a part of the bloc's overall votes. See Reiljan & Ryan (2021, Appendix) for more details.
+
+```{r}
+party_vote_shares <- tribble(
+  ~party, ~vote_share, ~bloc, ~relative_vote_share,
+  "LFI", 22.0, "left_greens", round(22.0 / (22.0 + 4.6 + 1.8),2),
+  "EELV", 4.6, "left_greens", round(4.6 / (22.0 + 4.6 + 1.8),2),
+  "PS", 1.8, "left_greens", round(1.8 / (22.0 + 4.6 + 1.8), 2),
+  "LREM", 27.9, "centre_right", round(27.9 / (27.9 + 4.8),2),
+  "LR", 4.8, "centre_right", round(4.8 / (27.9 + 4.8),2),
+  "Reconquete", 7.1, "far_right", round(7.1 / (7.1 + 23.2),2),
+  "RN", 23.2, "far_right", round(23.2 / (7.1 + 23.2), 2)
+)
+```
+
+### Out-partisan dislike
+
+First, we can examine the Left-Greens. 
+```{r}
+# ---- Left-plus-Greens bloc ---- 
+# Filter respondents from the Left-Greens bloc
+# Code weighted average out-bloc sympathy
+# Select issue positions variables:
+#    - more socioeco left
+#    - pro-environment
+#    - pro-immigration
+left_bloc_df <- aggreg_waves_recoded |> 
+  filter(PID %in% left_greens) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_group_sympathy_centre_right = 
+      1/2 * group_sentiment_LREM * party_vote_shares$relative_vote_share[party_vote_shares$party == "LREM" ] +
+      1/2 * group_sentiment_LR * party_vote_shares$relative_vote_share[party_vote_shares$party == "LR" ] ,
+    out_group_sympathy_far_right = 
+      1/2 * group_sentiment_Reconquete * party_vote_shares$relative_vote_share[party_vote_shares$party == "Reconquete" ] +
+      1/2 * group_sentiment_RN * party_vote_shares$relative_vote_share[party_vote_shares$party == "RN" ]
+    )
+
+# ---- Models ----
+# Polarisation with centre-right
+model_left_and_centre_right <- lm(
+  data = left_bloc_df, out_group_sympathy_centre_right ~ 
+    socioeco_left + environment_pro + immigration_pro + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_left_and_centre_right)
+
+# Polarisation with far-right
+model_left_and_far_right <- lm(
+  data = left_bloc_df, out_group_sympathy_far_right ~ 
+    socioeco_left + environment_pro + immigration_pro + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_left_and_far_right)
+```
+
+As anticipated, the socioeconomic cleavage is the most important factor in hostility of supporters of the Left-Greens bloc towards centre-right partisans. When it comes to hostility towards far-right supporters however, respondents who support immigration more strongly tend to show a stronger animus.
+
+Let us turn to supporters of the center-right bloc:
+```{r}
+# ---- Center-Right bloc ---- 
+# Filter respondents from the center-right bloc
+# Code weighted average out-bloc sympathy
+# Depending on the model, we select issue positions variables opposite 
+# to the other bloc of the dyad
+center_right_bloc_df <- aggreg_waves_recoded |> 
+  filter(PID %in% centre_right) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_group_sympathy_left = 
+      1/3 * group_sentiment_LFI * party_vote_shares$relative_vote_share[party_vote_shares$party == "LFI" ] +
+      1/3 * group_sentiment_EELV * party_vote_shares$relative_vote_share[party_vote_shares$party == "EELV" ] +
+      1/3 * group_sentiment_PS * party_vote_shares$relative_vote_share[party_vote_shares$party == "PS" ],
+    out_group_sympathy_far_right = 
+      1/2 * group_sentiment_Reconquete * party_vote_shares$relative_vote_share[party_vote_shares$party == "Reconquete" ] +
+      1/2 * group_sentiment_RN * party_vote_shares$relative_vote_share[party_vote_shares$party == "RN" ]
+    )
+
+# ---- Models ----
+# Polarisation with left-greens
+model_centre_right_and_left <- lm(
+  data = center_right_bloc_df, out_group_sympathy_left ~ 
+    socioeco_right + environment_against + immigration_against + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_centre_right_and_left)
+
+# Polarisation with far-right
+model_centre_right_and_far_right <- lm(
+  data = center_right_bloc_df, out_group_sympathy_far_right ~ 
+    socioeco_left + environment_pro + immigration_pro + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_centre_right_and_far_right)
+```
+
+Interestingly, supporters of center-right parties who have more extreme positions against immigration display a stronger hostility towards voters of the left-greens bloc. This is a sign that issues of the second dimension are no longer a cleavage between far-right and mainstream parties, but is permeating and fostering affective polarisation between center-right and -left parties.
+
+LFI has also taken strong stances in favor of immigration.
+
+Finally, let us study the determinants of out-partisan hostility among supporters of the far-right:
+```{r}
+# ---- Far-Right bloc ---- 
+# Filter respondents from the far-right bloc
+# Code weighted average out-bloc sympathy
+# Select issue positions variables:
+#    - more socioeco right
+#    - anti-environment
+#    - anti-immigration
+far_right_bloc_df <- aggreg_waves_recoded |> 
+  filter(PID %in% far_right) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_group_sympathy_left = 
+      1/3 * group_sentiment_LFI * party_vote_shares$relative_vote_share[party_vote_shares$party == "LFI" ] +
+      1/3 * group_sentiment_EELV * party_vote_shares$relative_vote_share[party_vote_shares$party == "EELV" ] +
+      1/3 * group_sentiment_PS * party_vote_shares$relative_vote_share[party_vote_shares$party == "PS" ],
+    out_group_sympathy_centre_right = 
+      1/2 * group_sentiment_LREM * party_vote_shares$relative_vote_share[party_vote_shares$party == "LREM" ] +
+      1/2 * group_sentiment_LR * party_vote_shares$relative_vote_share[party_vote_shares$party == "LR" ] 
+    )
+
+# ---- Models ----
+# Polarisation with left-greens
+model_far_right_and_left <- lm(
+  data = far_right_bloc_df, out_group_sympathy_left ~ 
+    socioeco_right + environment_against + immigration_against + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_far_right_and_left)
+
+# Polarisation with far-right
+model_far_right_and_center_right <- lm(
+  data = far_right_bloc_df, out_group_sympathy_centre_right ~ 
+    socioeco_right + environment_against + immigration_against + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_far_right_and_center_right)
+```
+
+### Out-party dislike
+
+We can now turn to the analysis of the relative importance of various ideological cleavages on out-party dislike, instead of out-partisan dislike.
+
+First, we can examine the Left-Greens. 
+```{r}
+# ---- Left-plus-Greens bloc ---- 
+# Filter respondents from the Left-Greens bloc
+# Code weighted average out-bloc sympathy
+# Select issue positions variables:
+#    - more socioeco left
+#    - pro-environment
+#    - pro-immigration
+left_bloc_df2 <- aggreg_waves_recoded |> 
+  filter(PID %in% left_greens) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_party_sympathy_centre_right = 
+      1/2 * party_sympathy_LREM * party_vote_shares$relative_vote_share[party_vote_shares$party == "LREM" ] +
+      1/2 * party_sympathy_LR * party_vote_shares$relative_vote_share[party_vote_shares$party == "LR" ] ,
+    out_party_sympathy_far_right = 
+      1/2 * party_sympathy_Reconquete * party_vote_shares$relative_vote_share[party_vote_shares$party == "Reconquete" ] +
+      1/2 * party_sympathy_RN * party_vote_shares$relative_vote_share[party_vote_shares$party == "RN" ]
+    )
+
+# ---- Models ----
+# Polarisation with centre-right
+model_left_and_centre_right2 <- lm(
+  data = left_bloc_df2, out_party_sympathy_centre_right ~ 
+    socioeco_left + environment_pro + immigration_pro + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_left_and_centre_right2)
+
+# Polarisation with far-right
+model_left_and_far_right2 <- lm(
+  data = left_bloc_df2, out_party_sympathy_far_right ~ 
+    socioeco_left + environment_pro + immigration_pro + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_left_and_far_right2)
+```
+
+As anticipated, the socioeconomic cleavage is the most important factor in hostility of supporters of the Left-Greens bloc towards centre-right partisans. When it comes to hostility towards far-right supporters however, respondents who support immigration more strongly tend to show a stronger animus.
+
+Let us turn to supporters of the center-right bloc:
+```{r}
+# ---- Center-Right bloc ---- 
+# Filter respondents from the center-right bloc
+# Code weighted average out-bloc sympathy
+# Depending on the model, we select issue positions variables opposite 
+# to the other bloc of the dyad
+center_right_bloc_df2 <- aggreg_waves_recoded |> 
+  filter(PID %in% centre_right) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_party_sympathy_left = 
+      1/3 * party_sympathy_LFI * party_vote_shares$relative_vote_share[party_vote_shares$party == "LFI" ] +
+      1/3 * party_sympathy_EELV * party_vote_shares$relative_vote_share[party_vote_shares$party == "EELV" ] +
+      1/3 * party_sympathy_PS * party_vote_shares$relative_vote_share[party_vote_shares$party == "PS" ],
+    out_party_sympathy_far_right = 
+      1/2 * party_sympathy_Reconquete * party_vote_shares$relative_vote_share[party_vote_shares$party == "Reconquete" ] +
+      1/2 * party_sympathy_RN * party_vote_shares$relative_vote_share[party_vote_shares$party == "RN" ]
+    )
+
+# ---- Models ----
+# Polarisation with left-greens
+model_centre_right_and_left2 <- lm(
+  data = center_right_bloc_df2, out_party_sympathy_left ~ 
+    socioeco_right + environment_against + immigration_against + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_centre_right_and_left2)
+
+# Polarisation with far-right
+model_centre_right_and_far_right2 <- lm(
+  data = center_right_bloc_df2, out_party_sympathy_far_right ~ 
+    socioeco_left + environment_pro + immigration_pro + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_centre_right_and_far_right2)
+```
+
+Interestingly, supporters of center-right parties who have more extreme positions against immigration display a stronger hostility towards voters of the left-greens bloc. This is a sign that issues of the second dimension are no longer a cleavage between far-right and mainstream parties, but is permeating and fostering affective polarisation between center-right and -left parties. It also most likely a result of Jean-Luc Mélanchon's strong stance pro-immigration.
+
+Finally, let us study the determinants of out-partisan hostility among supporters of the far-right:
+```{r}
+# ---- Far-Right bloc ---- 
+# Filter respondents from the far-right bloc
+# Code weighted average out-bloc sympathy
+# Select issue positions variables:
+#    - more socioeco right
+#    - anti-environment
+#    - anti-immigration
+far_right_bloc_df2 <- aggreg_waves_recoded |> 
+  filter(PID %in% far_right) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_party_sympathy_left = 
+      1/3 * party_sympathy_LFI * party_vote_shares$relative_vote_share[party_vote_shares$party == "LFI" ] +
+      1/3 * party_sympathy_EELV * party_vote_shares$relative_vote_share[party_vote_shares$party == "EELV" ] +
+      1/3 * party_sympathy_PS * party_vote_shares$relative_vote_share[party_vote_shares$party == "PS" ],
+    out_party_sympathy_centre_right = 
+      1/2 * party_sympathy_LREM * party_vote_shares$relative_vote_share[party_vote_shares$party == "LREM" ] +
+      1/2 * party_sympathy_LR * party_vote_shares$relative_vote_share[party_vote_shares$party == "LR" ] 
+    )
+
+# ---- Models ----
+# Polarisation with left-greens
+model_far_right_and_left2 <- lm(
+  data = far_right_bloc_df2, out_party_sympathy_left ~ 
+    socioeco_right + environment_against + immigration_against + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_far_right_and_left2)
+
+# Polarisation with center-right
+model_far_right_and_center_right2 <- lm(
+  data = far_right_bloc_df2, out_party_sympathy_centre_right ~ 
+    socioeco_right + environment_against + immigration_against + interest_politics_cat + PID_strength_cat + 
+    age_decade + diploma + sex
+  )
+
+tab_model(model_far_right_and_center_right2)
+```

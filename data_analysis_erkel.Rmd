@@ -1,0 +1,224 @@
+---
+title: "POLS0066 - Data Analysis - Ryan"
+author: "GNWL7"
+date: "2024-01-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Affective Polarisation in the French multiparty system\`
+
+## Setup
+
+The data comes from Sciences Po's [Dataverse](https://data.sciencespo.fr/dataverse/donneesrecherche). Data from Waves 1-4 has been imported as csv's, and stored in the /data folder. It has been aggregated and cleaned in `data_cleaning.R`.
+
+```{r include=FALSE}
+library(tidyverse)
+library(viridis)
+library(lmtest)
+library(multiwayvcov)
+library(lme4)
+library(sjPlot)
+load("data/recoded_data.RData")
+```
+
+## Wave 4 Analysis - The Impact of Ideological Difference and Partisan Identity on Affective Polarisation
+
+We can now move on to the testing of our hypotheses.
+
+The fourth wave of the 2022 French Election Study, carried out after the Presidential election from April 28 to June 2, 2022, takes up the entirety of module 6 (2021-2026) of the CSES (Comparative study of electoral systems) international comparison project.
+
+```{r}
+# Subset participants who:
+#   participated in wave 4
+#   have expressed an in-party sympathy
+#   have revealed their position on the left-right scale
+# N = 1034
+df_W4 <- aggreg_waves_recoded |> 
+  filter(W4 & in_party_sympathy & left_right_self)
+```
+
+### Adding Ideological distance
+
+To include ideological distance in models, both the objective and subjective ideological positions of parties can be computed. Objective ideological position is the respondents' average rating of the party's left-right position. Subjective ideological position is each respondent's rating of the party's left-right position.
+
+```{r}
+df_ideological <- df_W4 |>
+  mutate(
+    subj_ideo_dist_LFI = abs(left_right_LFI - left_right_self),
+    subj_ideo_dist_EELV = abs(left_right_EELV - left_right_self),
+    subj_ideo_dist_PS = abs(left_right_PS - left_right_self),
+    subj_ideo_dist_MoDem = abs(left_right_MoDem - left_right_self),
+    subj_ideo_dist_LREM = abs(left_right_LREM - left_right_self),
+    subj_ideo_dist_LR = abs(left_right_LR - left_right_self),
+    subj_ideo_dist_RN = abs(left_right_RN - left_right_self),
+    subj_ideo_dist_Reconquete = abs(left_right_Reconquete - left_right_self)
+  )|> 
+  mutate(
+    obj_ideo_dist_LFI = abs(mean(left_right_LFI, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_EELV = abs(mean(left_right_EELV, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_PS = abs(mean(left_right_PS, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_MoDem = abs(mean(left_right_MoDem, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_LREM = abs(mean(left_right_LREM, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_LR = abs(mean(left_right_LR, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_RN = abs(mean(left_right_RN, na.rm = TRUE) - left_right_self),
+    obj_ideo_dist_Reconquete = abs(mean(left_right_Reconquete, na.rm = TRUE) - left_right_self)
+  ) |> 
+  mutate(
+    ideo_extreme = abs(left_right_self - 5)
+  ) |> 
+  select(-left_right_LFI, -left_right_EELV, -left_right_PS, -left_right_LREM,
+         -left_right_LR, -left_right_RN, -left_right_Reconquete, -left_right_MoDem)
+
+```
+
+Starting with subjective ideological distance:
+
+```{r}
+# Long dataset with, for each respondent, their subjective ideological distance
+# and party symapthy for all parties
+df_party_dislike_subj_long <- 
+  df_ideological |> 
+  select(
+    id, age_decade, diploma, sex,
+    party_sympathy_LFI, party_sympathy_EELV, party_sympathy_PS,
+    party_sympathy_LREM, party_sympathy_LR, party_sympathy_RN,
+    party_sympathy_Reconquete, party_sympathy_MoDem,
+    interest_politics, PID, PID_strength, ideo_extreme, 
+    subj_ideo_dist_LFI, subj_ideo_dist_EELV, subj_ideo_dist_PS,
+    subj_ideo_dist_MoDem, subj_ideo_dist_LREM, subj_ideo_dist_LR,
+    subj_ideo_dist_RN, subj_ideo_dist_Reconquete) |> 
+  pivot_longer(
+    cols = starts_with("party_sympathy_"),
+    names_to = "party",
+    values_to = "party_sympathy"
+  ) |> 
+  pivot_longer(
+    cols = starts_with("subj_ideo_dist_"),
+    names_to = "subj_ideo_dist",
+    values_to = "subj_ideo_distance"
+  ) |> 
+  mutate(party = gsub("party_sympathy_", "", party)) |> 
+  filter(party == gsub("subj_ideo_dist_", "", subj_ideo_dist)) |> 
+  filter(PID != party)
+```
+
+Party sympathy for out-parties can be regressed on subjective ideological distance. We use multilevel linear regression models because the data structure is nested within the respondent, with 7 dyads between the respondent and the out-party.
+
+```{r}
+# Model 1: Subjective Ideological Distance, Political Interest, and Demographic controls
+# Multilevel linear regression model with random intercepts
+model1_party_dislike_subj <- lmer(
+  data = df_party_dislike_subj_long,
+  party_sympathy ~ 
+    subj_ideo_distance + ideo_extreme + interest_politics + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model1_party_dislike_subj)
+
+
+# Model 2: Adding partisan identity strength
+model2_party_dislike_subj <- lmer(
+  data = df_party_dislike_subj_long,
+  party_sympathy ~ 
+    subj_ideo_distance + PID_strength + ideo_extreme + interest_politics + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model2_party_dislike_subj)
+
+
+# Model 3: Interaction between subjective ideological difference and political identity strength 
+model3_party_dislike_subj <- lmer(
+  data = df_party_dislike_subj_long,
+  party_sympathy ~ 
+    subj_ideo_distance*PID_strength + ideo_extreme + interest_politics + age_decade + diploma + sex + (1 | id)
+) 
+
+tab_model(model3_party_dislike_subj)
+
+# Model 4: Interaction between subjective ideological difference and ideological extremity
+model4_party_dislike_subj <- lmer(
+  data = df_party_dislike_subj_long,
+  party_sympathy ~ 
+    subj_ideo_distance*ideo_extreme + PID_strength + interest_politics + age_decade + diploma + sex + (1 | id)
+) 
+
+tab_model(model4_party_dislike_subj)
+```
+
+Of course, using the subjective measure of ideological distance does not fully exclude the possibility that the relationship may partly work reversed as well, and that a more negative affect towards a group may also cause people to perceive these groups as more ideologically distant. For this reason, we also run the same model with the objective ideological distance measure instead" (Erkel & Turkenburg, 2023, p. 396)
+
+```{r}
+# Long dataset with, for each respondent, their objective ideological distance
+# and party symapthy for all parties
+df_party_dislike_obj_long <- 
+  df_ideological |> 
+  select(
+    id, age_decade, diploma, sex,
+    party_sympathy_LFI, party_sympathy_EELV, party_sympathy_PS,
+    party_sympathy_LREM, party_sympathy_LR, party_sympathy_RN,
+    party_sympathy_Reconquete, party_sympathy_MoDem,
+    interest_politics, PID, PID_strength, ideo_extreme, 
+    obj_ideo_dist_LFI, obj_ideo_dist_EELV, obj_ideo_dist_PS,
+    obj_ideo_dist_MoDem, obj_ideo_dist_LREM, obj_ideo_dist_LR,
+    obj_ideo_dist_RN, obj_ideo_dist_Reconquete) |> 
+  pivot_longer(
+    cols = starts_with("party_sympathy_"),
+    names_to = "party",
+    values_to = "party_sympathy"
+  ) |> 
+  pivot_longer(
+    cols = starts_with("obj_ideo_dist_"),
+    names_to = "obj_ideo_dist",
+    values_to = "obj_ideo_distance"
+  ) |> 
+  mutate(party = gsub("party_sympathy_", "", party)) |> 
+  filter(party == gsub("obj_ideo_dist_", "", obj_ideo_dist)) |> 
+  filter(PID != party)
+```
+
+On with the multilevel linear regression models:
+
+```{r}
+# Model 1: Objective Ideological Distance, Political Interest, and Demographic controls
+# Multilevel linear regression model with random intercepts
+model1_party_dislike_obj <- lmer(
+  data = df_party_dislike_obj_long,
+  party_sympathy ~ 
+    obj_ideo_distance + ideo_extreme + interest_politics + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model1_party_dislike_obj)
+
+
+# Model 2: Adding partisan identity strength
+model2_party_dislike_obj <- lmer(
+  data = df_party_dislike_obj_long,
+  party_sympathy ~ 
+    obj_ideo_distance + PID_strength + ideo_extreme + interest_politics + age_decade + diploma + sex + (1 | id)
+)
+
+tab_model(model2_party_dislike_obj)
+
+
+# Model 3: Interaction between objective ideological difference and political identity strength 
+model3_party_dislike_obj <- lmer(
+  data = df_party_dislike_obj_long,
+  party_sympathy ~ 
+    obj_ideo_distance*PID_strength + ideo_extreme + interest_politics + age_decade + diploma + sex + (1 | id)
+) 
+
+tab_model(model3_party_dislike_obj)
+
+# Model 4: Interaction between objective ideological difference and ideological extremity
+model4_party_dislike_obj <- lmer(
+  data = df_party_dislike_obj_long,
+  party_sympathy ~ 
+    obj_ideo_distance*ideo_extreme + PID_strength + interest_politics + age_decade + diploma + sex + (1 | id)
+) 
+
+tab_model(model4_party_dislike_obj)
+```

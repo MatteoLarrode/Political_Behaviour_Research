@@ -1,0 +1,168 @@
+---
+title: "POLS0066 - Data Analysis - Exploratory"
+author: "GNWL7"
+date: "2024-01-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Affective Polarisation in the French multiparty system\`
+
+## Setup
+
+The data comes from Sciences Po's [Dataverse](https://data.sciencespo.fr/dataverse/donneesrecherche). Data from Waves 1-4 has been imported as csv's, and stored in the /data folder. It has been aggregated and cleaned in `data_cleaning.R`.
+
+```{r include=FALSE}
+library(tidyverse)
+library(viridis)
+library(lme4)
+library(sjPlot)
+load("data/recoded_data.RData")
+```
+
+### Adding Party Age
+
+The analysis might involve party age:
+
+```{r}
+party_age <- tribble(
+  ~party, ~party_creation, ~party_age,
+  "DLF", 2014, 2022-2014,
+  "EELV", 2010, 2022-2010,
+  "LFI", 2016, 2022-2016,
+  "LO", 1968, 2022-1968,
+  "LR", 2002, 2022-2002,
+  "LREM", 2016, 2022-2016,
+  "MoDem", 2007, 2022-2007,
+  "NPA", 2009, 2022-2009,
+  "PCF", 1920, 2022-1920,
+  "PS", 1969, 2022-1969,
+  "Reconquete", 2021, 2022-2021,
+  "RN", 1972, 2022-1972,
+)
+
+df1 <- aggreg_waves_recoded |> 
+  filter(PID %in% party_age$party) |> 
+  left_join(party_age, by = c("PID" = "party"))
+```
+
+Now let's create a simple model regressing party identity strength on party age.
+
+```{r}
+# Regress PID strength on party age
+m1 <- lm(data = df1, PID_strength ~ party_age)
+summary(m1)
+```
+
+This simple model yields no statistical significance.
+
+## Insight on the French Party System
+
+We can run some exploratory data analysis to explore how supporters of the most prominent French parties feel about each other.
+
+```{r}
+selected_parties <- c(
+  "LFI", "EELV", "PS", "LREM", "LR", "RN", "Reconquete"
+)
+
+df_heatmap <- aggreg_waves_recoded |> 
+  filter(!is.na(PID)) |> 
+  select(
+    id, group_sentiment_LFI, group_sentiment_EELV, group_sentiment_PS,
+    group_sentiment_LREM, group_sentiment_LR, group_sentiment_RN,
+    group_sentiment_Reconquete, PID
+    ) |> 
+  pivot_longer(cols = starts_with("group_sentiment"), names_to = "Group", values_to = "Sentiment") |> 
+  group_by(PID, Group) |> 
+  summarize(AvgSentiment = round(mean(Sentiment, na.rm = TRUE), 1)) |> 
+  filter(PID %in% selected_parties) |> 
+   # relevel from most right to most left (average ranking)
+  mutate(
+    PID = factor(PID, levels = c("RN", "Reconquete", "LR", "LREM", "PS", "EELV", "LFI")),
+    Group = factor(
+      fct_recode(Group, LFI = "group_sentiment_LFI", EELV = "group_sentiment_EELV",
+                       PS = 'group_sentiment_PS', LREM = "group_sentiment_LREM",
+                       LR = "group_sentiment_LR", Reconquete = "group_sentiment_Reconquete", 
+                       RN = "group_sentiment_RN"),
+      levels = c("RN", "Reconquete", "LR", "LREM", "PS", "EELV", "LFI")
+    )
+  )
+
+heatmap_plot <- 
+  ggplot(df_heatmap, aes(x = Group, y = PID, fill = AvgSentiment, label = AvgSentiment)) +
+  geom_tile() +
+  geom_text(color = "black", size = 3) +
+  scale_fill_viridis_c(option = "plasma", alpha = 0.6) +
+  scale_x_discrete(position = "top", limits = rev) +
+  theme_minimal() +
+  labs(title = "Figure 1. Partisan Like-Dislike Matrix",
+       x = "Average sympathy for supporters of",
+       y = "Party supported") +
+  theme(panel.grid = element_blank(),
+        legend.position = "none",
+        text = element_text(family = "Times New Roman"),
+        axis.title.y = element_text(angle = 0, vjust = 0.933, hjust = 1),
+        axis.title.x.top = element_text(margin = margin(t = 10, b = 10)),
+        plot.title = element_text(face = "bold"))
+
+heatmap_plot
+```
+
+This heatmap supports the idea of a tripolar French party system. Supporters of LFI, EELV, and PS all show an average degree of sympathy higher than 5 amongst the triad and lower than 5 for supporters of other parties. This corresponds to the left-greens bloc. The same can be observed for the LREM / LR and RN / Reconquete dyads, which respectively form the center-right and far-right bloc.
+
+Let us confirm if these dynamics are similar when looking at party sympathy instead of supporters sympathy.
+
+```{r}
+selected_parties <- c(
+  "LFI", "EELV", "PS", "LREM", "LR", "RN", "Reconquete"
+)
+
+df_heatmap2 <- aggreg_waves_recoded |> 
+  filter(!is.na(PID)) |> 
+  select(
+    id, party_sympathy_LFI, party_sympathy_EELV, party_sympathy_PS,
+    party_sympathy_LREM, party_sympathy_LR, party_sympathy_RN,
+    party_sympathy_Reconquete, PID
+    ) |> 
+  pivot_longer(cols = starts_with("party_sympathy"), names_to = "Party", values_to = "Sympathy") |> 
+  group_by(PID, Party) |> 
+  summarize(AvgSympathy = round(mean(Sympathy, na.rm = TRUE), 1)) |> 
+  filter(PID %in% selected_parties) |> 
+   # relevel from most right to most left (average ranking)
+  mutate(
+    PID = factor(PID, levels = c("RN", "Reconquete", "LR", "LREM", "PS", "EELV", "LFI")),
+    Party = factor(
+      fct_recode(Party, LFI = "party_sympathy_LFI", EELV = "party_sympathy_EELV",
+                       PS = 'party_sympathy_PS', LREM = "party_sympathy_LREM",
+                       LR = "party_sympathy_LR", Reconquete = "party_sympathy_Reconquete", 
+                       RN = "party_sympathy_RN"),
+      levels = c("RN", "Reconquete", "LR", "LREM", "PS", "EELV", "LFI")
+    )
+  )
+
+heatmap_plot2 <- 
+  ggplot(df_heatmap2, aes(x = Party, y = PID, fill = AvgSympathy, label = AvgSympathy)) +
+  geom_tile() +
+  geom_text(color = "black", size = 3) +
+  scale_fill_viridis_c(option = "plasma", alpha = 0.6) +
+  scale_x_discrete(position = "top", limits = rev) +
+  theme_minimal() +
+  labs(title = "Figure 2. Party Sympathy Matrix",
+       x = "Average sympathy for",
+       y = "Party supported") +
+  theme(panel.grid = element_blank(),
+        legend.position = "none",
+        text = element_text(family = "Times New Roman"),
+        axis.title.y = element_text(angle = 0, vjust = 0.933),
+        axis.title.x.top = element_text(margin = margin(t = 10, b = 10)),
+        plot.title = element_text(face = "bold"))
+
+heatmap_plot2
+```
+
+Similar results are displayed in Figure 2, with the main difference being that grades are slightly lower for out-parties than their supporters in general, and higher for in-parties than in-supporters.
+
+Exploratory analysis of data from the 2022 French Election Study therefore corroborates Knapp's analysis (2022). The tripolarisation of the party system in France follows a logical ideological pattern.

@@ -187,14 +187,23 @@ aggreg_waves_recoded <-
     ))
   ) |>
   
-  # ideological indicators
+  # ideological indicators: need to be coded in two different ways for bloc analysis
+  # standardise to 1-4 Likert scale (Fully / Rather / Rather not / Not at all)
+  # check V1 & V3 documentation to see how variables were coded in FES
+  # usually: higher = does not agree at all
   mutate(
-    # very skewed so binary (neutral/negative vs. positive)
-    environment = factor(ifelse(between(personal_duty_climate_change, 0, 6), 0, 1)),
-    # 1-4 Likert scales (higher = more ideologically right)
-    socioeco = (redistribution + (5 - reduce_public_sector)) / 2,
-    immigration = (immigration_as_cultural_enriching + (5 - islam_as_threat_for_french_identity)) / 2,
-    EU = 5 - ((rescale_0_10to1_4(eu_power) + rescale_0_10to1_4(eu_integration)) / 2)
+    # Environment
+    environment_pro = rescale_0_10to1_4(personal_duty_climate_change),
+    environment_against = 5 - environment_pro,
+    # Socioeconomic left-right
+    socioeco_left = ((5 - redistribution) + reduce_public_sector) / 2,
+    socioeco_right = (redistribution + (5 - reduce_public_sector)) / 2,
+    # Immigration
+    immigration_pro = ((5 - immigration_as_cultural_enriching) + islam_as_threat_for_french_identity),
+    immigration_against = (immigration_as_cultural_enriching + (5 - islam_as_threat_for_french_identity)) / 2,
+    # EU
+    EU_pro = (rescale_0_10to1_4(eu_power) + rescale_0_10to1_4(eu_integration)) / 2,
+    EU_against = 5 - ((rescale_0_10to1_4(eu_power) + rescale_0_10to1_4(eu_integration)) / 2)
   ) |>
   select(
     -personal_duty_climate_change, -redistribution,
@@ -207,7 +216,7 @@ aggreg_waves_recoded <-
   mutate(
     PID = relevel(
       factor(case_when(
-        party_identification_2 == 5 ~ "None",
+        party_identification_2 == 5 ~ "No PID",
         party_identification_which == 1 ~ "LO",
         party_identification_which == 2 ~ "NPA",
         party_identification_which == 3 ~ "PCF",
@@ -223,10 +232,19 @@ aggreg_waves_recoded <-
         party_identification_which == 13 ~ "Other",
         TRUE ~ NA)
         ),
-      ref = "None"
+      ref = "No PID"
     ),
     # 0-4: higher = higher PID strength 
-    PID_strength = ifelse(PID == "None", 0, 5 - party_identification_strength)
+    PID_strength = ifelse(PID == "No PID", 0, 5 - party_identification_strength),
+    PID_strength_cat = relevel(
+      factor(case_when(
+        PID_strength == 0 ~ "No PID",
+        PID_strength == 1 ~ "Weak",
+        between(PID_strength, 2, 3) ~ "Moderate",
+        PID_strength == 4 ~ "Strong")
+      ),
+      ref = "Moderate"
+    )
   ) |>
   select(
     -party_identification_1, -party_identification_2, 
@@ -258,7 +276,15 @@ aggreg_waves_recoded <-
   
   # interest in politics: 0-3: higher = higher interest
   mutate(
-    interest_politics = 4 - interest_politics
+    interest_politics = 4 - interest_politics,
+    interest_politics_cat = relevel(
+      factor(case_when(
+        interest_politics == 0 ~ "No",
+        between(interest_politics, 1, 3) ~ "Yes"
+        )
+      ),
+      ref = "No"
+    )
   )
 
 save(aggreg_waves_recoded, file = "data/recoded_data.RData")

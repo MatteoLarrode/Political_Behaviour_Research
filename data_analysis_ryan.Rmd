@@ -1,0 +1,190 @@
+---
+title: "POLS0066 - Data Analysis - Ryan"
+author: "GNWL7"
+date: "2024-01-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Affective Polarisation in the French multiparty system\`
+
+## Setup
+
+The data comes from Sciences Po's [Dataverse](https://data.sciencespo.fr/dataverse/donneesrecherche). Data from Waves 1-4 has been imported as csv's, and stored in the /data folder. It has been aggregated and cleaned in `data_cleaning.R`.
+
+```{r include=FALSE}
+library(tidyverse)
+library(viridis)
+library(lmtest)
+library(multiwayvcov)
+library(lme4)
+library(sjPlot)
+load("data/recoded_data.RData")
+```
+
+### Adding Party Vote Share
+
+In- and out-group evaluations will be weighted using vote shares so that larger parties count more. We use data for the first round of the 2022 Presidential election, from the French Ministry of the Interior (Ministère de l'Intérieur). Although this proxy has limitations, it has been used in previous studies and constitutes an improvement from unweighted evaluations.
+
+In the calculations of in- and out-bloc sympathy, each party's evaluation will be weighted by the ratio of votes gained by that party as a part of the bloc's overall votes. See Reiljan & Ryan (2021, Appendix) for more details.
+
+```{r}
+party_vote_shares <- tribble(
+  ~party, ~vote_share, ~bloc, ~relative_vote_share,
+  "LFI", 22.0, "left_greens", round(22.0 / (22.0 + 4.6 + 1.8),2),
+  "EELV", 4.6, "left_greens", round(4.6 / (22.0 + 4.6 + 1.8),2),
+  "PS", 1.8, "left_greens", round(1.8 / (22.0 + 4.6 + 1.8), 2),
+  "LREM", 27.9, "centre_right", round(27.9 / (27.9 + 4.8),2),
+  "LR", 4.8, "centre_right", round(4.8 / (27.9 + 4.8),2),
+  "Reconquete", 7.1, "far_right", round(7.1 / (7.1 + 23.2),2),
+  "RN", 23.2, "far_right", round(23.2 / (7.1 + 23.2), 2)
+)
+```
+
+
+## Waves 2, 3 & 4 Analysis - The Ideological Drivers of Affective polarisation Within the Three Blocs
+
+First supporters within the Left-plus-Greens bloc:
+
+```{r}
+left_greens <- c("LFI", "EELV", "PS")
+centre_right <- c("LREM", "RN")
+far_right <- c("RN", "Reconquete")
+
+# Subset respondents of waves 1, 3 & 4
+df_W134 <- aggreg_waves_recoded |> 
+  filter(W1 & W3 & W4 & in_party_sympathy & left_right_self)
+
+
+# ---- Left-plus-Greens bloc ---- 
+left_bloc_df <- aggreg_waves_recoded |> 
+  filter(!is.na(in_party_sympathy) 
+         & PID %in% left_greens) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_group_sympathy_centre_right = 
+      1/2 * group_sentiment_LREM * party_vote_shares$relative_vote_share[party_vote_shares$party == "LREM" ] +
+      1/2 * group_sentiment_LR * party_vote_shares$relative_vote_share[party_vote_shares$party == "LR" ] ,
+    out_group_sympathy_far_right = 
+      1/2 * group_sentiment_Reconquete * party_vote_shares$relative_vote_share[party_vote_shares$party == "Reconquete" ] +
+      1/2 * group_sentiment_RN * party_vote_shares$relative_vote_share[party_vote_shares$party == "RN" ] ,
+    in_group_sympathy = 
+      1/3 * group_sentiment_LFI * party_vote_shares$relative_vote_share[party_vote_shares$party == "LFI" ] +
+      1/3 * group_sentiment_EELV * party_vote_shares$relative_vote_share[party_vote_shares$party == "EELV" ] +
+      1/3 * group_sentiment_PS * party_vote_shares$relative_vote_share[party_vote_shares$party == "PS" ]
+    ) |> 
+  
+  # affective polarisation
+  mutate(affect_polarisation_centre_right = in_party_sympathy - out_group_sympathy_centre_right,
+         affect_polarisation_far_right = in_party_sympathy - out_group_sympathy_far_right)
+
+# ---- Models ----
+# Polarisation with centre-right
+model_left_and_centre_right <- lm(
+  data = left_bloc_df, affect_polarisation_centre_right ~ 
+    PID_strength + socioeco + in_group_sympathy + environment +
+    + immigration + interest_politics
+  )
+summary(model_left_and_centre_right)
+
+# Polarisation with far-right
+model_left_and_far_right <- lm(
+  data = left_bloc_df, affect_polarisation_far_right ~ 
+    PID_strength + socioeco + in_group_sympathy + environment +
+    + immigration + interest_politics
+  )
+summary(model_left_and_far_right)
+
+```
+
+Next, respondents within the centre-right group. Importantly, there are less respondents within this bloc: N = 149.
+
+```{r}
+# ---- Centre-right bloc ---- 
+far_right_bloc_df <- aggreg_waves_recoded |> 
+  filter(!is.na(in_party_sympathy) 
+         & PID %in% far_right) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_group_sympathy_left = 
+      1/3 * group_sentiment_LFI * party_vote_shares$relative_vote_share[party_vote_shares$party == "LFI" ] +
+      1/3 * group_sentiment_EELV * party_vote_shares$relative_vote_share[party_vote_shares$party == "EELV" ] +
+      1/3 * group_sentiment_PS * party_vote_shares$relative_vote_share[party_vote_shares$party == "PS" ],
+    out_group_sympathy_center_right = 
+      1/2 * group_sentiment_LREM * party_vote_shares$relative_vote_share[party_vote_shares$party == "LREM" ] +
+      1/2 * group_sentiment_LR * party_vote_shares$relative_vote_share[party_vote_shares$party == "LR" ] ,
+    in_group_sympathy = 
+      1/2 * group_sentiment_Reconquete * party_vote_shares$relative_vote_share[party_vote_shares$party == "Reconquete" ] +
+      1/2 * group_sentiment_RN * party_vote_shares$relative_vote_share[party_vote_shares$party == "RN" ]
+    ) |> 
+  
+  # affective polarisation
+  mutate(affect_polarisation_left = in_party_sympathy - out_group_sympathy_left,
+         affect_polarisation_center_right = in_party_sympathy - out_group_sympathy_center_right)
+
+# ---- Models ----
+# Polarisation with left-plus-greens
+model_left_and_far_right <- lm(
+  data = far_right_bloc_df, affect_polarisation_left ~ 
+    PID_strength + socioeco + in_group_sympathy + environment +
+    + immigration + interest_politics
+  )
+summary(model_left_and_far_right)
+
+# Polarisation with far-right
+model_far_and_center_right <- lm(
+  data = far_right_bloc_df, affect_polarisation_center_right ~ 
+    PID_strength + socioeco + in_group_sympathy + environment +
+    + immigration + interest_politics
+  )
+summary(model_far_and_center_right)
+```
+
+Finally, let's observe the determinents of affective polarisation for supporters of parties within the far-right bloc:
+
+```{r}
+# ---- Far-Right group ---- 
+centre_right_bloc_df <- aggreg_waves_recoded |> 
+  filter(!is.na(in_party_sympathy) 
+         & PID %in% centre_right) |> 
+  
+  # out-group and in-group sympathy, weighted by vote share
+  mutate(
+    out_group_sympathy_left = 
+      1/3 * group_sentiment_LFI * party_vote_shares$relative_vote_share[party_vote_shares$party == "LFI" ] +
+      1/3 * group_sentiment_EELV * party_vote_shares$relative_vote_share[party_vote_shares$party == "EELV" ] +
+      1/3 * group_sentiment_PS * party_vote_shares$relative_vote_share[party_vote_shares$party == "PS" ],
+    out_group_sympathy_far_right = 
+      1/2 * group_sentiment_Reconquete * party_vote_shares$relative_vote_share[party_vote_shares$party == "Reconquete" ] +
+      1/2 * group_sentiment_RN * party_vote_shares$relative_vote_share[party_vote_shares$party == "RN" ] ,
+    in_group_sympathy = 
+      1/2 * group_sentiment_LREM * party_vote_shares$relative_vote_share[party_vote_shares$party == "LREM" ] +
+      1/2 * group_sentiment_LR * party_vote_shares$relative_vote_share[party_vote_shares$party == "LR" ]
+    ) |> 
+  
+  # affective polarisation
+  mutate(affect_polarisation_left = in_party_sympathy - out_group_sympathy_left,
+         affect_polarisation_far_right = in_party_sympathy - out_group_sympathy_far_right)
+
+# ---- Models ----
+# Polarisation with left-plus-greens
+model_centre_right_and_left <- lm(
+  data = centre_right_bloc_df, affect_polarisation_left ~ 
+    PID_strength + socioeco + in_group_sympathy + environment +
+    + immigration + interest_politics
+  )
+summary(model_centre_right_and_left)
+
+# Polarisation with centre-right
+model_centre_and_far_right <- lm(
+  data = centre_right_bloc_df, affect_polarisation_far_right ~ 
+    PID_strength + socioeco + in_group_sympathy + environment +
+    + immigration + interest_politics
+  )
+summary(model_centre_and_far_right)
+```
